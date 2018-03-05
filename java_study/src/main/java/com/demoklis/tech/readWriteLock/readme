@@ -1,0 +1,16 @@
+读写锁实现：
+1. 使用一个volatile boolean write标志位来表示是否有线程持有写锁
+2. 使用一个volatile 计数器来记录持有读锁的个数
+3. 使用两个条件来表示条件谓词： existReadCondition, existWriteCondition
+4. 需要一个内部锁来进行线程的同步，这里使用非公平的显式锁ReentrantLock
+5. 当有线程持有写锁时，设置write = true，让其他线程在existWriteCondition上等待
+6. 当有线程持有读锁时，让需要获得写锁的线程在existReadCondition等待，需要读锁的线程可以获得读锁，并设置读锁计数器加1
+7. 释放写锁时，需要唤醒在existWriteCondition上等待的线程
+8. 释放读锁时，设置读锁计数器减1，当读锁计数器等于0时表示当前没有读锁存在，唤醒在existReadCondition条件等待的线程
+9. 值得注意的是这个简单的读-写锁实现，在同一时刻，不管是读锁还是写锁都需要竞争内部锁，也就是说即使是多个读锁并发，同一时刻也只有一个线程能拿到内部锁，只是这个锁的持有时间很短，只设置一个计数器就释放了。
+实现类：SimpleReadWriteLock.java
+公平的读写锁：
+1. 使用公平的显式锁作为内部锁，保证先来先服务的公平性
+2. 使用一个readAccquired和readReleased计数器来记录获取读锁和释放读锁的线程个数
+3. 当readAccquired == readReleased时表示读锁已经全部释放，可以获得写锁
+4. 最大的改进在这里，获取写锁时分为两步，第一步当没有写锁存在时，就设置write标志为true表示要获取写锁。当write为true时，后来的读锁就一直等待existWriteConditiont条件释放，而不能增加readAccquire计数器。当之前已经获得的读锁都释放后，写锁获得锁。只有等待写锁释放后，后续的读锁才能继续操作。它的改进主要是在readAccquired == readRelease 条件谓词等待，而不是readCount > 0条件谓词等待。readAccquired的数量即肯定小于readCount，而且只要之前没有写锁存在，就优先让写锁获取。能够保证写锁快速获得锁
